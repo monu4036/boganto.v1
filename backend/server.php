@@ -85,6 +85,16 @@ if ($uri === '/api/blogs' ||
         }
         break;
     
+    case '/api/admin/banners':
+        // Admin Hero Banner management
+        require_once 'adminBanners.php';
+        break;
+    
+    case '/api/admin/related-books':
+        // Admin Related Books management
+        require_once 'adminRelatedBooks.php';
+        break;
+    
     default:
         // Check if it's a static file request from uploads directory
         if (preg_match('/\/uploads\/(.+)/', $uri, $matches)) {

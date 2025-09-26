@@ -51,9 +51,14 @@ const HeroBanner = ({ banners = [] }) => {
 
   return (
     <section 
-      className="relative h-96 md:h-[500px] lg:h-[600px] overflow-hidden"
+      className="relative h-96 md:h-[500px] lg:h-[600px] overflow-hidden group cursor-pointer"
       onMouseEnter={() => setIsAutoPlaying(false)}
       onMouseLeave={() => setIsAutoPlaying(true)}
+      onClick={() => {
+        if (currentBanner.blog_link || currentBanner.link_url) {
+          window.location.href = currentBanner.blog_link || currentBanner.link_url
+        }
+      }}
     >
       {/* Background Image */}
       <div className="absolute inset-0">
@@ -61,14 +66,14 @@ const HeroBanner = ({ banners = [] }) => {
           src={getImageUrl(currentBanner.image_url, DEFAULT_IMAGES.HERO_BANNER)}
           alt={currentBanner.title}
           fill
-          className="object-cover transition-opacity duration-500"
+          className="object-cover transition-all duration-500 group-hover:scale-105"
           priority
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 90vw, 80vw"
           quality={85}
           loading="eager"
           onError={(e) => handleImageError(e, DEFAULT_IMAGES.HERO_BANNER)}
         />
-        <div className="absolute inset-0 hero-section"></div>
+        <div className="absolute inset-0 hero-section group-hover:bg-black/30 transition-colors duration-300"></div>
       </div>
 
       {/* Content */}
@@ -83,10 +88,11 @@ const HeroBanner = ({ banners = [] }) => {
                 {currentBanner.subtitle}
               </p>
             )}
-            {currentBanner.link_url && (
+            {(currentBanner.blog_link || currentBanner.link_url) && (
               <Link
-                href={currentBanner.link_url}
+                href={currentBanner.blog_link || currentBanner.link_url}
                 className="btn-primary inline-flex items-center text-lg px-8 py-4 hover:bg-primary-700 transform hover:scale-105 transition-all duration-200"
+                onClick={(e) => e.stopPropagation()}
               >
                 Read More
                 <ChevronRight className="ml-2 h-5 w-5" />
@@ -100,14 +106,20 @@ const HeroBanner = ({ banners = [] }) => {
       {slides.length > 1 && (
         <>
           <button
-            onClick={prevSlide}
+            onClick={(e) => {
+              e.stopPropagation()
+              prevSlide()
+            }}
             className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded-full transition-all duration-200"
             aria-label="Previous slide"
           >
             <ChevronLeft className="h-6 w-6" />
           </button>
           <button
-            onClick={nextSlide}
+            onClick={(e) => {
+              e.stopPropagation()
+              nextSlide()
+            }}
             className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded-full transition-all duration-200"
             aria-label="Next slide"
           >
@@ -122,7 +134,10 @@ const HeroBanner = ({ banners = [] }) => {
           {slides.map((_, index) => (
             <button
               key={index}
-              onClick={() => goToSlide(index)}
+              onClick={(e) => {
+                e.stopPropagation()
+                goToSlide(index)
+              }}
               className={`w-3 h-3 rounded-full transition-all duration-200 ${
                 index === currentSlide
                   ? 'bg-primary-500'

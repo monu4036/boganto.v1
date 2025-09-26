@@ -21,12 +21,17 @@ switch ($method) {
 
 function getBannerImages($db) {
     try {
-        $query = "SELECT * FROM banner_images WHERE is_active = 1 ORDER BY sort_order ASC";
+        // Include blog information in the query for enhanced banner functionality
+        $query = "SELECT b.*, bl.slug as blog_slug, bl.title as blog_title 
+                  FROM banner_images b 
+                  LEFT JOIN blogs bl ON b.blog_id = bl.id 
+                  WHERE b.is_active = 1 
+                  ORDER BY b.sort_order ASC";
         $stmt = $db->prepare($query);
         $stmt->execute();
         $banners = $stmt->fetchAll();
         
-        // Format banner data
+        // Format banner data with enhanced blog linking
         $formatted_banners = array_map(function($banner) {
             return [
                 'id' => (int)$banner['id'],
@@ -34,7 +39,12 @@ function getBannerImages($db) {
                 'subtitle' => $banner['subtitle'],
                 'image_url' => $banner['image_url'],
                 'link_url' => $banner['link_url'],
-                'sort_order' => (int)$banner['sort_order']
+                'blog_id' => $banner['blog_id'] ? (int)$banner['blog_id'] : null,
+                'blog_slug' => $banner['blog_slug'],
+                'blog_title' => $banner['blog_title'],
+                'sort_order' => (int)$banner['sort_order'],
+                // Generate proper blog link URL from slug if available
+                'blog_link' => $banner['blog_slug'] ? '/blog/' . $banner['blog_slug'] : $banner['link_url']
             ];
         }, $banners);
         

@@ -300,17 +300,35 @@ function addRelatedBooks($db, $blog_id, $books) {
         $delete_stmt->bindParam(':blog_id', $blog_id, PDO::PARAM_INT);
         $delete_stmt->execute();
         
-        // Add new related books
-        $insert_query = "INSERT INTO related_books (blog_id, title, author, purchase_link, description, price) 
-                         VALUES (:blog_id, :title, :author, :purchase_link, :description, :price)";
+        // Add new related books with cover_image support
+        $insert_query = "INSERT INTO related_books (blog_id, title, author, purchase_link, cover_image, description, price) 
+                         VALUES (:blog_id, :title, :author, :purchase_link, :cover_image, :description, :price)";
         $insert_stmt = $db->prepare($insert_query);
         
-        foreach ($books as $book) {
+        foreach ($books as $index => $book) {
             if (isset($book['title']) && isset($book['purchase_link'])) {
+                // Handle cover image upload for each book
+                $cover_image = null;
+                $cover_image_key = 'book_cover_' . $index;
+                
+                if (isset($_FILES[$cover_image_key]) && $_FILES[$cover_image_key]['error'] === UPLOAD_ERR_OK) {
+                    $cover_image = uploadFileToSubfolder($_FILES[$cover_image_key], 'book_covers');
+                }
+                
+                // Use provided cover_image if no file was uploaded
+                if (!$cover_image && isset($book['cover_image'])) {
+                    $cover_image = $book['cover_image'];
+                    // Filter out external URLs (only allow uploaded images or null)
+                    if (strpos($cover_image, 'http') === 0 && strpos($cover_image, '/uploads/') === false) {
+                        $cover_image = null;
+                    }
+                }
+                
                 $insert_stmt->bindParam(':blog_id', $blog_id, PDO::PARAM_INT);
                 $insert_stmt->bindParam(':title', $book['title']);
                 $insert_stmt->bindParam(':author', $book['author'] ?? '');
                 $insert_stmt->bindParam(':purchase_link', $book['purchase_link']);
+                $insert_stmt->bindParam(':cover_image', $cover_image);
                 $insert_stmt->bindParam(':description', $book['description'] ?? '');
                 $insert_stmt->bindParam(':price', $book['price'] ?? '');
                 $insert_stmt->execute();
@@ -321,5 +339,50 @@ function addRelatedBooks($db, $blog_id, $books) {
         // Log error but don't fail the main operation
         error_log('Failed to add related books: ' . $e->getMessage());
     }
+}
+
+// Helper function for file uploads with subfolder support
+function uploadFileToSubfolder($file, $subfolder = '') {
+    $upload_dir = '../uploads/';
+    
+    // Create subfolder if specified
+    if ($subfolder) {
+        $upload_dir .= $subfolder . '/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+    }
+    
+    // Check for upload errors
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return false;
+    }
+    
+    // Validate file type
+    $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    $file_type = $file['type'];
+    
+    if (!in_array($file_type, $allowed_types)) {
+        return false;
+    }
+    
+    // Validate file size (5MB max)
+    $max_size = 5 * 1024 * 1024; // 5MB
+    if ($file['size'] > $max_size) {
+        return false;
+    }
+    
+    // Generate unique filename
+    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $filename = uniqid() . '_' . time() . '.' . $extension;
+    $file_path = $upload_dir . $filename;
+    
+    // Move uploaded file
+    if (move_uploaded_file($file['tmp_name'], $file_path)) {
+        // Return relative path from webroot
+        return '/uploads/' . ($subfolder ? $subfolder . '/' : '') . $filename;
+    }
+    
+    return false;
 }
 ?>

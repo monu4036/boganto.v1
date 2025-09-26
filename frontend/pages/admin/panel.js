@@ -40,6 +40,19 @@ const AdminPanel = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Hero Banner management state
+  const [banners, setBanners] = useState([])
+  const [showBannerForm, setShowBannerForm] = useState(false)
+  const [editingBanner, setEditingBanner] = useState(null)
+  const [bannerFormData, setBannerFormData] = useState({
+    title: '',
+    subtitle: '',
+    blog_id: '',
+    banner_image: null,
+    sort_order: 0,
+    is_active: true
+  })
   
   // Form state
   const [formData, setFormData] = useState({
@@ -82,6 +95,8 @@ const AdminPanel = () => {
       fetchCategories()
       if (activeSection === 'blogs') {
         fetchBlogs()
+      } else if (activeSection === 'banners') {
+        fetchBanners()
       }
     }
   }, [user, activeSection, currentPage, searchTerm, statusFilter])
@@ -116,6 +131,21 @@ const AdminPanel = () => {
     } catch (error) {
       console.error('Error fetching blogs:', error)
       showToast('Failed to load blogs', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchBanners = async () => {
+    setLoading(true)
+    try {
+      const response = await axios.get('/api/admin/banners', {
+        withCredentials: true
+      })
+      setBanners(response.data.banners || [])
+    } catch (error) {
+      console.error('Error fetching banners:', error)
+      showToast('Failed to load banners', 'error')
     } finally {
       setLoading(false)
     }
@@ -168,12 +198,18 @@ const AdminPanel = () => {
   }
 
   const addRelatedBook = () => {
-    setRelatedBooks([...relatedBooks, { title: '', author: '', purchase_link: '' }])
+    setRelatedBooks([...relatedBooks, { title: '', author: '', purchase_link: '', cover_image: null, description: '', price: '' }])
   }
 
   const updateRelatedBook = (index, field, value) => {
     const updated = [...relatedBooks]
     updated[index] = { ...updated[index], [field]: value }
+    setRelatedBooks(updated)
+  }
+
+  const updateRelatedBookFile = (index, field, file) => {
+    const updated = [...relatedBooks]
+    updated[index] = { ...updated[index], [field]: file }
     setRelatedBooks(updated)
   }
 
@@ -197,9 +233,21 @@ const AdminPanel = () => {
         }
       })
 
-      // Add related books
+      // Add related books and their cover images
       if (relatedBooks.length > 0) {
-        formPayload.append('related_books', JSON.stringify(relatedBooks))
+        // Add related books data without cover_image files
+        const booksData = relatedBooks.map(book => {
+          const { cover_image, ...bookData } = book
+          return bookData
+        })
+        formPayload.append('related_books', JSON.stringify(booksData))
+        
+        // Add cover image files separately
+        relatedBooks.forEach((book, index) => {
+          if (book.cover_image && book.cover_image instanceof File) {
+            formPayload.append(`book_cover_${index}`, book.cover_image)
+          }
+        })
       }
 
       let response
@@ -251,7 +299,12 @@ const AdminPanel = () => {
     
     // Load related books for editing
     if (blog.related_books) {
-      setRelatedBooks(blog.related_books)
+      const formattedBooks = blog.related_books.map(book => ({
+        ...book,
+        cover_image: null, // Reset file input for editing
+        cover_image_url: book.cover_image // Store existing image URL for preview
+      }))
+      setRelatedBooks(formattedBooks)
     }
     
     setShowForm(true)
@@ -272,9 +325,107 @@ const AdminPanel = () => {
     }
   }
 
+  const resetBannerForm = () => {
+    setBannerFormData({
+      title: '',
+      subtitle: '',
+      blog_id: '',
+      banner_image: null,
+      sort_order: 0,
+      is_active: true
+    })
+    setEditingBanner(null)
+  }
+
+  const handleBannerInputChange = (e) => {
+    const { name, value, type, checked, files } = e.target
+    
+    if (type === 'file') {
+      setBannerFormData(prev => ({ ...prev, [name]: files[0] }))
+    } else if (type === 'checkbox') {
+      setBannerFormData(prev => ({ ...prev, [name]: checked }))
+    } else {
+      setBannerFormData(prev => ({ ...prev, [name]: value }))
+    }
+  }
+
+  const handleBannerSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      const formPayload = new FormData()
+      
+      // Add all form fields
+      Object.keys(bannerFormData).forEach(key => {
+        if (key === 'banner_image' && bannerFormData[key]) {
+          formPayload.append(key, bannerFormData[key])
+        } else if (key !== 'banner_image') {
+          formPayload.append(key, bannerFormData[key])
+        }
+      })
+
+      let response
+      if (editingBanner) {
+        // Update existing banner
+        formPayload.append('id', editingBanner.id)
+        response = await axios.put('/api/admin/banners', formPayload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          withCredentials: true
+        })
+      } else {
+        // Create new banner
+        response = await axios.post('/api/admin/banners', formPayload, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          withCredentials: true
+        })
+      }
+
+      showToast(editingBanner ? 'Banner updated successfully!' : 'Banner created successfully!')
+      resetBannerForm()
+      setShowBannerForm(false)
+      fetchBanners()
+      
+    } catch (error) {
+      console.error('Error saving banner:', error)
+      showToast(error.response?.data?.error || 'Failed to save banner', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleEditBanner = (banner) => {
+    setEditingBanner(banner)
+    setBannerFormData({
+      title: banner.title || '',
+      subtitle: banner.subtitle || '',
+      blog_id: banner.blog_id || '',
+      banner_image: null,
+      sort_order: banner.sort_order || 0,
+      is_active: banner.is_active !== undefined ? banner.is_active : true
+    })
+    setShowBannerForm(true)
+  }
+
+  const handleDeleteBanner = async (bannerId) => {
+    if (!confirm('Are you sure you want to delete this banner?')) return
+
+    try {
+      await axios.delete(`/api/admin/banners?id=${bannerId}`, {
+        withCredentials: true
+      })
+      showToast('Banner deleted successfully!')
+      fetchBanners()
+    } catch (error) {
+      console.error('Error deleting banner:', error)
+      showToast('Failed to delete banner', 'error')
+    }
+  }
+
   const sidebarItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'blogs', label: 'Blog Management', icon: FileText },
+    { id: 'banners', label: 'Hero Banners', icon: Image },
     { id: 'categories', label: 'Categories', icon: Tags },
     { id: 'media', label: 'Media Library', icon: Image },
     { id: 'users', label: 'User Management', icon: Users },
@@ -364,11 +515,13 @@ const AdminPanel = () => {
                 </button>
                 <div>
                   <h1 className="text-xl font-bold text-slate-800 capitalize">
-                    {activeSection === 'blogs' ? 'Blog Management' : activeSection}
+                    {activeSection === 'blogs' ? 'Blog Management' : 
+                     activeSection === 'banners' ? 'Hero Banners' : activeSection}
                   </h1>
                   <p className="text-sm text-slate-500">
                     {activeSection === 'dashboard' && 'Overview of your blog statistics'}
                     {activeSection === 'blogs' && 'Create, edit, and manage your blog posts'}
+                    {activeSection === 'banners' && 'Manage homepage hero banners (max 4 active)'}
                     {activeSection === 'categories' && 'Manage blog categories'}
                     {activeSection === 'media' && 'Upload and manage media files'}
                     {activeSection === 'users' && 'Manage admin users'}
@@ -818,39 +971,100 @@ const AdminPanel = () => {
                         </div>
                         
                         {relatedBooks.map((book, index) => (
-                          <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border border-gray-200 rounded-lg mb-4">
+                          <div key={index} className="p-4 border border-gray-200 rounded-lg mb-4 space-y-4">
+                            {/* Book Basic Info Row */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Book Title *</label>
+                                <input
+                                  type="text"
+                                  placeholder="Book title"
+                                  value={book.title || ''}
+                                  onChange={(e) => updateRelatedBook(index, 'title', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Author</label>
+                                <input
+                                  type="text"
+                                  placeholder="Author name"
+                                  value={book.author || ''}
+                                  onChange={(e) => updateRelatedBook(index, 'author', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Price</label>
+                                <input
+                                  type="text"
+                                  placeholder="$19.99"
+                                  value={book.price || ''}
+                                  onChange={(e) => updateRelatedBook(index, 'price', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Purchase Link and Cover Image Row */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Purchase Link *</label>
+                                <input
+                                  type="url"
+                                  placeholder="https://amazon.com/..."
+                                  value={book.purchase_link || ''}
+                                  onChange={(e) => updateRelatedBook(index, 'purchase_link', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Cover Image</label>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => updateRelatedBookFile(index, 'cover_image', e.target.files[0])}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Description */}
                             <div>
-                              <input
-                                type="text"
-                                placeholder="Book title"
-                                value={book.title}
-                                onChange={(e) => updateRelatedBook(index, 'title', e.target.value)}
+                              <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
+                              <textarea
+                                placeholder="Brief description of the book..."
+                                value={book.description || ''}
+                                onChange={(e) => updateRelatedBook(index, 'description', e.target.value)}
+                                rows={2}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                               />
                             </div>
-                            <div>
-                              <input
-                                type="text"
-                                placeholder="Author name"
-                                value={book.author}
-                                onChange={(e) => updateRelatedBook(index, 'author', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                              />
-                            </div>
-                            <div className="flex space-x-2">
-                              <input
-                                type="url"
-                                placeholder="Purchase link"
-                                value={book.purchase_link}
-                                onChange={(e) => updateRelatedBook(index, 'purchase_link', e.target.value)}
-                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                              />
+
+                            {/* Cover Image Preview */}
+                            {(book.cover_image || book.cover_image_url) && (
+                              <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Cover Preview</label>
+                                <img
+                                  src={book.cover_image ? URL.createObjectURL(book.cover_image) : book.cover_image_url}
+                                  alt="Book cover preview"
+                                  className="w-24 h-32 object-cover rounded border"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none'
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            {/* Remove Button */}
+                            <div className="flex justify-end">
                               <button
                                 type="button"
                                 onClick={() => removeRelatedBook(index)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                className="flex items-center space-x-1 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
                               >
                                 <Trash2 className="w-4 h-4" />
+                                <span>Remove Book</span>
                               </button>
                             </div>
                           </div>
@@ -938,6 +1152,318 @@ const AdminPanel = () => {
                         >
                           {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>}
                           <span>{editingBlog ? 'Update Blog' : 'Create Blog'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hero Banner Management Section */}
+            {activeSection === 'banners' && (
+              <div className="space-y-6">
+                {!showBannerForm ? (
+                  <>
+                    {/* Banner List Header */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                        <div className="flex items-center space-x-4">
+                          <div className="bg-orange-100 p-2 rounded-lg">
+                            <Image className="w-5 h-5 text-orange-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-medium text-slate-800">Hero Banner Management</h3>
+                            <p className="text-sm text-slate-600">
+                              Current banners: {banners.filter(b => b.is_active).length}/4 active
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => setShowBannerForm(true)}
+                          disabled={banners.filter(b => b.is_active).length >= 4}
+                          className="flex items-center space-x-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add Hero Banner</span>
+                        </button>
+                      </div>
+                      
+                      {banners.filter(b => b.is_active).length >= 4 && (
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <p className="text-sm text-yellow-800">
+                            <strong>Limit Reached:</strong> You have reached the maximum of 4 active banners. 
+                            Deactivate or delete an existing banner to add a new one.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Banner List */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                      {loading ? (
+                        <div className="p-8 text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-4"></div>
+                          <p className="text-slate-600">Loading banners...</p>
+                        </div>
+                      ) : banners.length === 0 ? (
+                        <div className="p-8 text-center">
+                          <Image className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-slate-800 mb-2">No Banners Yet</h3>
+                          <p className="text-slate-600 mb-4">Create your first hero banner to showcase featured content on the homepage.</p>
+                          <button
+                            onClick={() => setShowBannerForm(true)}
+                            className="flex items-center space-x-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition mx-auto"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Create First Banner</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+                          {banners.map((banner) => (
+                            <div key={banner.id} className="border border-gray-200 rounded-lg p-4">
+                              {/* Banner Image */}
+                              <div className="aspect-video mb-4 bg-gray-100 rounded-lg overflow-hidden">
+                                <img
+                                  src={banner.image_url}
+                                  alt={banner.title}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.src = '/api/placeholder/400/225'
+                                  }}
+                                />
+                              </div>
+                              
+                              {/* Banner Info */}
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h4 className="font-medium text-slate-800 truncate">{banner.title}</h4>
+                                    {banner.subtitle && (
+                                      <p className="text-sm text-slate-600 truncate">{banner.subtitle}</p>
+                                    )}
+                                  </div>
+                                  <span className={`ml-2 inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                    banner.is_active 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {banner.is_active ? 'Active' : 'Inactive'}
+                                  </span>
+                                </div>
+                                
+                                {banner.blog_title && (
+                                  <div className="text-sm text-slate-500">
+                                    <span className="font-medium">Links to:</span> {banner.blog_title}
+                                  </div>
+                                )}
+                                
+                                <div className="text-xs text-slate-400">
+                                  Sort Order: {banner.sort_order} • Created: {new Date(banner.created_at).toLocaleDateString()}
+                                </div>
+                                
+                                {/* Actions */}
+                                <div className="flex space-x-2 pt-2 border-t border-gray-100">
+                                  <button
+                                    onClick={() => handleEditBanner(banner)}
+                                    className="flex items-center space-x-1 px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteBanner(banner.id)}
+                                    className="flex items-center space-x-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                  {banner.blog_slug && (
+                                    <button
+                                      onClick={() => window.open(`/blog/${banner.blog_slug}`, '_blank')}
+                                      className="flex items-center space-x-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      <span>View</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  /* Banner Form */
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-xl font-bold text-slate-800">
+                        {editingBanner ? 'Edit Hero Banner' : 'Create New Hero Banner'}
+                      </h2>
+                      <button
+                        onClick={() => {
+                          setShowBannerForm(false)
+                          resetBannerForm()
+                        }}
+                        className="px-4 py-2 text-slate-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleBannerSubmit} className="space-y-6">
+                      {/* Title and Subtitle */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Title *
+                          </label>
+                          <input
+                            type="text"
+                            name="title"
+                            value={bannerFormData.title}
+                            onChange={handleBannerInputChange}
+                            required
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            placeholder="Enter banner title"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Subtitle
+                          </label>
+                          <input
+                            type="text"
+                            name="subtitle"
+                            value={bannerFormData.subtitle}
+                            onChange={handleBannerInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                            placeholder="Enter banner subtitle (optional)"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Blog Selection and Sort Order */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Linked Blog *
+                          </label>
+                          <select
+                            name="blog_id"
+                            value={bannerFormData.blog_id}
+                            onChange={handleBannerInputChange}
+                            required
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                          >
+                            <option value="">Select a blog to link</option>
+                            {blogs.filter(blog => blog.status === 'published').map(blog => (
+                              <option key={blog.id} value={blog.id}>
+                                {blog.title}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Clicking the banner will redirect to the selected blog
+                          </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Sort Order
+                          </label>
+                          <input
+                            type="number"
+                            name="sort_order"
+                            value={bannerFormData.sort_order}
+                            onChange={handleBannerInputChange}
+                            min="0"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                          />
+                          <p className="text-xs text-slate-500 mt-1">
+                            Lower numbers appear first
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Banner Image Upload */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Banner Image *
+                        </label>
+                        <input
+                          type="file"
+                          name="banner_image"
+                          accept="image/*"
+                          onChange={handleBannerInputChange}
+                          required={!editingBanner}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                        />
+                        {/* Preview for existing image or newly selected image */}
+                        {(editingBanner?.image_url || bannerFormData.banner_image) && (
+                          <div className="mt-4">
+                            <div className="text-xs text-slate-500 mb-2">Preview:</div>
+                            <div className="aspect-video w-full max-w-md bg-gray-100 rounded-lg overflow-hidden">
+                              <img
+                                src={bannerFormData.banner_image ? URL.createObjectURL(bannerFormData.banner_image) : editingBanner?.image_url}
+                                alt="Banner preview"
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.target.style.display = 'none'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Upload Guidelines */}
+                        <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-blue-800 mb-1">Image Guidelines:</h4>
+                          <ul className="text-xs text-blue-700 space-y-0.5">
+                            <li>• Recommended size: 1200x675px (16:9 aspect ratio)</li>
+                            <li>• Maximum file size: 5MB</li>
+                            <li>• Supported formats: JPG, PNG, WebP</li>
+                            <li>• Images will be stored locally in /uploads/banners/</li>
+                          </ul>
+                        </div>
+                      </div>
+
+                      {/* Active Status */}
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="is_active"
+                          checked={bannerFormData.is_active}
+                          onChange={handleBannerInputChange}
+                          className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                        />
+                        <label className="ml-2 text-sm font-medium text-slate-700">
+                          Active Banner (will be displayed on homepage)
+                        </label>
+                      </div>
+
+                      {/* Submit Button */}
+                      <div className="flex justify-end space-x-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowBannerForm(false)
+                            resetBannerForm()
+                          }}
+                          className="px-6 py-2 border border-gray-300 text-slate-700 rounded-lg hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                        >
+                          {loading && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>}
+                          <span>{editingBanner ? 'Update Banner' : 'Create Banner'}</span>
                         </button>
                       </div>
                     </form>
